@@ -4,6 +4,7 @@ dim outputl 'Email body
 Dim AllApps 'Data from CSV
 dim WPData 'Web page text
 Dim yfound 'For new apps, series of tests to find similar apps
+Dim mfound 'Count new modules if any are found
 Dim UpdatePageQTH, UpdatePageQTHVarience 'Used to fix any integer values in the two fields that are actually NULL
 Dim adoconn
 Dim rs
@@ -67,61 +68,42 @@ else
 end if
 
 
-'CheckForModules 'Check to see if new modules exist
+CheckForModules 'Check to see if new modules exist
 
 
 'Check to see if new modules exist
 Function CheckForModules()
- Dim fso, f, fld, fl, Name, i, j, halfL
- Dim nReturn, RecCount
- Set fso = CreateObject("scripting.filesystemobject")
- Set fld = fso.GetFolder(vPath)
+	Dim fso, f, fld, fl, Name
+	Set fso = CreateObject("scripting.filesystemobject")
+	Set fld = fso.GetFolder(strCurDir & "\Modules")
 
- 'Set adoconn = CreateObject("ADODB.Connection")
- 'Set rs = CreateObject("ADODB.Recordset")
- 'adoconn.mode = 3 ' adModeReadWrite
- 'adoconn.Open "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=DBLocation"
+	Set adoconn = CreateObject("ADODB.Connection")
+	Set rs = CreateObject("ADODB.Recordset")
+	adoconn.Open "Driver={MySQL ODBC 8.0 ANSI Driver};Server=" & DBLocation & ";" & _
+	   "Database=" & PSSchema & "; User=" & DBUser & "; Password=" & DBPass & ";"
+ 
+	
+	mfound = False
+	For Each f In fld.Files
+		if right(lcase(f.name),4) = ".vbs" or right(lcase(f.name),4) = ".ps1" or right(lcase(f.name),4) = ".bat" then 'Supported module extentions: Visual Basic Script (vbs), PowerShell (ps1), Batch file (bat)
+			
+			str = "Select * from modules where FileName='" & f.name & "';"
+			rs.Open str, adoconn, 2, 1 'OpenType, LockType
+			
+			if rs.eof then
+				str = "INSERT INTO modules(Name,FileName,RunInterval,NextRunDate,MasterList) values('" & left(f.name,(len(f.name)-4)) & "','" & f.name & "','1','" & format(date(), "YYYY-MM-DD")  & "','0');"
+				adoconn.Execute(str)
+				
+				mfound = True
+			end if
+			rs.close
+		end if
+	Next
 
- 'str = "select count(*) from " & flname & " where Name='*New Document*'"
- 'rs.Open str, adoconn, 0, 1
- 'RecCount = rs.Fields(0)
- 'rs.close
-
-str = "select * from " & flname & " where Name='*New Document*'"
-rs.Open str, adoconn, 3, 3
-
-
- j = 1
- For Each f In fld.Files
-  if right(lcase(f.name)) = ".vbs" or right(lcase(f.name)) = ".ps1" or right(lcase(f.name)) = ".bat" then 'Supported module extentions: Visual Basic Script (vbs), PowerShell (ps1), Batch file (bat)
-    if j < 11 then
-      yFound = 0
-      if recCount > 0 then
-        rs.MoveFirst
-        for nReturn = 1 to RecCount
-         If rs(1) = flname & "/inbox/" & f.name Then 'If the file in database
-           yFound = nReturn
-         End If
-         If yFound > 0 Then nReturn = RecCount Else rs.MoveNext
-        next
-      end if
-
-      If yFound = 0 Then
-        rs.AddNew 1, flname & "/inbox/" & f.name
-         rs(2) = "*New Document*"
-         for i = 3 to 10
-           rs(i) = ""
-         next
-         recCount = recCount + 1
-      End If
-    end if
-    j = j + 1
-  end if 
- Next
-
- 'if not recCount = 0 then rs.update
- 'Set adoconn = Nothing
- 'Set rs = Nothing
+    If mfound = True Then
+		'This is where we'll send an email listing the new modules found
+		msgbox "New module found"
+    End If
 
 End Function
 
