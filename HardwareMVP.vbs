@@ -4,7 +4,8 @@ dim outputl 'Email body
 Dim AllApps 'Data from CSV
 dim WPData 'Web page text
 Dim yfound 'For new apps, series of tests to find similar apps
-Dim mfound 'Count new modules if any are found
+Dim mfound 'New modules, if any are found
+Dim ModuleSQL 'SQL string for multiple modules
 Dim UpdatePageQTH, UpdatePageQTHVarience 'Used to fix any integer values in the two fields that are actually NULL
 Dim adoconn
 Dim rs
@@ -67,8 +68,23 @@ else
 	'WriteIni strCurDir & "\smapp.ini", "WebGUI", "BaseURL", EditURL
 end if
 
+outputl = ""
+
+Set adoconn = CreateObject("ADODB.Connection")
+Set rs = CreateObject("ADODB.Recordset")
+adoconn.Open "Driver={MySQL ODBC 8.0 ANSI Driver};Server=" & DBLocation & ";" & _
+   "Database=" & PSSchema & "; User=" & DBUser & "; Password=" & DBPass & ";"
 
 CheckForModules 'Check to see if new modules exist
+CleanupModules 'Remove tables for deleted modules after a week
+
+if outputl <> "" then
+	outputl = "<html><head> <style>BODY{font-family: Arial; font-size: 10pt;}TABLE{border: 1px solid black; border-collapse: collapse;}TH{border: 1px solid black; background: #dddddd; padding: 5px; }TD{border: 1px solid black; padding: 5px; }</style> </head><body>" & vbcrlf & outputl
+	SendMail RptToEmail, "HardwareMVP: Modules Changed"
+	outputl = ""
+end if
+
+ProcessModules 'Run scheduler
 
 
 'Check to see if new modules exist
@@ -77,34 +93,136 @@ Function CheckForModules()
 	Set fso = CreateObject("scripting.filesystemobject")
 	Set fld = fso.GetFolder(strCurDir & "\Modules")
 
-	Set adoconn = CreateObject("ADODB.Connection")
-	Set rs = CreateObject("ADODB.Recordset")
-	adoconn.Open "Driver={MySQL ODBC 8.0 ANSI Driver};Server=" & DBLocation & ";" & _
-	   "Database=" & PSSchema & "; User=" & DBUser & "; Password=" & DBPass & ";"
- 
-	
-	mfound = False
+	mfound = ""
 	For Each f In fld.Files
 		if right(lcase(f.name),4) = ".vbs" or right(lcase(f.name),4) = ".ps1" or right(lcase(f.name),4) = ".bat" then 'Supported module extentions: Visual Basic Script (vbs), PowerShell (ps1), Batch file (bat)
+			ModuleName = left(f.name,(len(f.name)-4))
 			
 			str = "Select * from modules where FileName='" & f.name & "';"
-			rs.Open str, adoconn, 2, 1 'OpenType, LockType
+			rs.Open str, adoconn, 3, 3 'OpenType, LockType
 			
 			if rs.eof then
-				str = "INSERT INTO modules(Name,FileName,RunInterval,NextRunDate,MasterList) values('" & left(f.name,(len(f.name)-4)) & "','" & f.name & "','1','" & format(date(), "YYYY-MM-DD")  & "','0');"
+				str = "INSERT INTO modules(Name,FileName,LastDiscovered,RunInterval,NextRunDate,MasterList) values('" & ModuleName & "','" & f.name & "','" & format(date(), "YYYY-MM-DD") & "','1','" & format(date(), "YYYY-MM-DD")  & "','0');"
 				adoconn.Execute(str)
 				
-				mfound = True
+				mfound = mfound & ModuleName & "|"
+			else
+				'if not rs("MasterList") = "1" and not rs("TableName") & "" = "" then
+				'	if not ModuleSQL = "" then ModuleSQL & ", "
+				'	ModuleSQL = ModuleSQL & "(select count(Name) from " & PSSchema & "." & rs("TableName") & " where " & rs("TableName") & ".Name = %MasterList%.Name) `" & rs("Name") &"`"
+				'end if
+				rs("LastDiscovered") = format(date(), "YYYY-MM-DD")
+				rs.update
 			end if
 			rs.close
 		end if
 	Next
 
-    If mfound = True Then
+    If not mfound = "" Then
 		'This is where we'll send an email listing the new modules found
-		msgbox "New module found"
+		msgbox "New module found: " & vbCrlf & replace(mfound, "|", vbCrlf)
+		
+		'Header Info
+		outputl = outputl & "<p><b>The following new modules have been added:</b></p>" & vbcrlf
+		outputl = outputl & "<table>" & vbcrlf
+		outputl = outputl & "<tr>" & vbcrlf
+		outputl = outputl & "  <th>Name</th>" & vbcrlf
+		outputl = outputl & "</tr>" & vbcrlf
+		
+		outputl = outputl & "<tr><td>" &	replace(mfound, "|", "</td></tr><tr><td>")
+		outputl = left(outputl,len(outputl)-8)
+		outputl = outputl & "</table>" & vbcrlf
     End If
 
+End Function
+
+'Remove tables for deleted modules
+Function CleanupModules()
+	'msgbox "Here is where we would cleanup modules"
+	
+	str = "Select * from modules where LastDiscovered IS NOT NULL and not LastDiscovered = '" & format(date(), "YYYY-MM-DD") & "';"
+	rs.Open str, adoconn, 3, 3 'OpenType, LockType
+	
+	if not rs.eof then
+		'Header Info
+		outputl = outputl & "<p><b>The following modules are no longer found in the Modules directory:</b></p>" & vbcrlf
+		outputl = outputl & "<table>" & vbcrlf
+		outputl = outputl & "<tr>" & vbcrlf
+		outputl = outputl & "  <th>Name</th>" & vbcrlf
+		outputl = outputl & "  <th>File Name</th>" & vbcrlf
+		outputl = outputl & "  <th>Master List</th>" & vbcrlf
+		outputl = outputl & "  <th>Table Removal Date</th>" & vbcrlf
+		outputl = outputl & "</tr>" & vbcrlf
+		
+		rs.MoveFirst
+	end if
+	
+	do while not rs.eof
+		'msgbox "We would send an email here about this module being deleted on " & (rs("LastDiscovered") + 7) & ": " & rs("Name")
+		
+		outputl = outputl & "<tr>" & vbcrlf
+		outputl = outputl & "  <td>" & rs("Name") & "</td>" & vbcrlf
+		outputl = outputl & "  <td>" & rs("FileName") & "</td>" & vbcrlf
+		if rs("MasterList") = "1" then
+			outputl = outputl & "  <td bgcolor=#FF0000>>Yes</td>" & vbcrlf
+		else
+			outputl = outputl & "  <td></td>" & vbcrlf
+		end if
+		if rs("TableName") & "" = "" then
+			outputl = outputl & "  <td>N/A</td>" & vbcrlf
+		elseif cdate(rs("LastDiscovered")) < (Date() - 7) then
+			outputl = outputl & "  <td bgcolor=#FF0000>" & (rs("LastDiscovered") + 7) & "</td>" & vbcrlf
+			
+			str = "DROP TABLE `" & PSSchema & "`.`" & rs("TableName") & "`;"
+			adoconn.Execute(str)
+			
+			rs.delete
+		else
+			outputl = outputl & "  <td>" & (rs("LastDiscovered") + 7) & "</td>" & vbcrlf
+		end if
+		outputl = outputl & "</tr>" & vbcrlf
+
+		rs.movenext
+		if rs.eof then outputl = outputl & "</table>" & vbcrlf
+	loop
+	
+	rs.close
+End Function
+
+'Run any modules that are scheduled to run
+Function ProcessModules()
+	Set objShell = Wscript.CreateObject("Wscript.Shell")
+	Dim MScript
+	'msgbox "Here is where we would process modules"
+	
+	str = "Select * from modules where NextRunDate IS NOT NULL and NextRunDate <= '" & format(date(), "YYYY-MM-DD") & "' and LastDiscovered IS NOT NULL and LastDiscovered = '" & format(date(), "YYYY-MM-DD") & "';"
+	rs.Open str, adoconn, 3, 3 'OpenType, LockType
+	
+	do while not rs.eof
+		msgbox "We would run this module now because it is set to run on or after " & (rs("NextRunDate") + 7) & ": " & rs("Name")
+		
+		if right(lcase(rs("FileName")),4) = ".vbs" then
+			MScript = "wscript """ & strCurDir & "\modules\" & rs("FileName") & """"
+		elseif right(lcase(rs("FileName")),4) = ".ps1" then
+			MScript = "%systemroot%\System32\WindowsPowerShell\V1.0\PowerShell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass """ & strCurDir & "\modules\" & rs("FileName") & """"
+		elseif right(lcase(rs("FileName")),4) = ".bat" then
+			MScript = "cmd /c """ & strCurDir & "\modules\" & rs("FileName") & """"
+		else
+			MScript = rs("FileName")
+		end if
+		
+		'Run module script
+		objShell.Run MScript, 0, True ' The script will continue until it is closed.
+		'objShell.Run MScript, 1, True ' The script will continue until it is closed.
+		
+		'Update scheduler for the next run time
+		rs("NextRunDate") = format((date() + rs("RunInterval")), "YYYY-MM-DD")
+		
+		rs.update
+		rs.movenext
+	loop
+	
+	rs.close
 End Function
 
 Function SendMail(TextRcv,TextSubject)
@@ -478,28 +596,13 @@ Function CheckForTables()
 		
 		'Create tables
 		PSTbl = "modules"
-		str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, FileName text, RunInterval int(11) DEFAULT '1', NextRunDate date DEFAULT NULL, MasterList int(11) DEFAULT '0');"
+		str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, FileName text, TableName text, LastDiscovered date DEFAULT NULL, RunInterval int(11) DEFAULT '1', NextRunDate date DEFAULT NULL, MasterList int(11) DEFAULT '0');"
 		adoconn.Execute(str)
 		
-		PSTbl = "goldhardware"
-		str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, IPAddress text, OS text, OSVersion text, OSSP text, Manufacturer text, SerialNumber text, Memory text, CPUName text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL);"
-		adoconn.Execute(str)
+		'PSTbl = "goldhardware"
+		'str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, IPAddress text, OS text, OSVersion text, OSSP text, Manufacturer text, SerialNumber text, Memory text, CPUName text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL);"
+		'adoconn.Execute(str)
 		
-		' PSTbl = "discoveredapplications"
-		' str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, `Version_Oldest` text, `Version_Newest` text, Computers int(11) DEFAULT NULL, Free text, OpenSource text, FOSS text, ReasonForSoftware text, NeededOnMachines text, PlansForRemoval text, `Update Method` text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL, UpdateURL text, UpdatePageQTH int(11) DEFAULT NULL, UpdatePageQTHVarience int(11) DEFAULT '10');"
-		' adoconn.Execute(str)
-		
-		' PSTbl = "applicationsdump"
-		' str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Computer text, Name text, Publisher text, Version text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL);"
-		' adoconn.Execute(str)
-		
-		' PSTbl = "highriskapps"
-		' str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, DateAdded date DEFAULT NULL, Source text);"
-		' adoconn.Execute(str)
-		
-		' PSTbl = "licensedapps"
-		' str = "CREATE TABLE " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, Publisher text, Amount int(11) DEFAULT NULL, Comments text);"
-		' adoconn.Execute(str)
 	end if
 	
 	Set adoconn = Nothing
