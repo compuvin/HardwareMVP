@@ -170,6 +170,7 @@ Function CleanupModules()
 		end if
 		if rs("TableName") & "" = "" then
 			outputl = outputl & "  <td>N/A</td>" & vbcrlf
+			rs.delete
 		elseif cdate(rs("LastDiscovered")) < (Date() - 7) then
 			outputl = outputl & "  <td bgcolor=#FF0000>" & (rs("LastDiscovered") + 7) & "</td>" & vbcrlf
 			
