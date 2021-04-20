@@ -77,7 +77,7 @@ If filesys.FileExists(CSVPath) then
 		outputl = ""
 	end if
 	
-	'filesys.DeleteFile CSVPath, force
+	filesys.DeleteFile CSVPath, force
 end if
 
 
