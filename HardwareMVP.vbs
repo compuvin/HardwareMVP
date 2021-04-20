@@ -120,7 +120,7 @@ Function CheckForModules()
 
     If not mfound = "" Then
 		'This is where we'll send an email listing the new modules found
-		msgbox "New module found: " & vbCrlf & replace(mfound, "|", vbCrlf)
+		'msgbox "New module found: " & vbCrlf & replace(mfound, "|", vbCrlf)
 		
 		'Header Info
 		outputl = outputl & "<p><b>The following new modules have been added:</b></p>" & vbcrlf
@@ -164,7 +164,7 @@ Function CleanupModules()
 		outputl = outputl & "  <td>" & rs("Name") & "</td>" & vbcrlf
 		outputl = outputl & "  <td>" & rs("FileName") & "</td>" & vbcrlf
 		if rs("MasterList") = "1" then
-			outputl = outputl & "  <td bgcolor=#FF0000>>Yes</td>" & vbcrlf
+			outputl = outputl & "  <td bgcolor=#FF0000>Yes</td>" & vbcrlf
 		else
 			outputl = outputl & "  <td></td>" & vbcrlf
 		end if
@@ -200,7 +200,7 @@ Function ProcessModules()
 	rs.Open str, adoconn, 3, 3 'OpenType, LockType
 	
 	do while not rs.eof
-		msgbox "We would run this module now because it is set to run on or after " & (rs("NextRunDate") + 7) & ": " & rs("Name")
+		'msgbox "We would run this module now because it is set to run on or after " & (rs("NextRunDate") + 7) & ": " & rs("Name")
 		
 		if right(lcase(rs("FileName")),4) = ".vbs" then
 			MScript = "wscript """ & strCurDir & "\modules\" & rs("FileName") & """"

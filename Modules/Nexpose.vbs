@@ -12,12 +12,15 @@ Dim strCurDir
 strCurDir = filesys.GetParentFolderName(Wscript.ScriptFullName)
 strCurDir = filesys.GetParentFolderName(strCurDir) 'Get the parent folder of the Modules folder
 Dim PSSchema, PSTbl,PSFN, PSRunInt, PSML 'Define schema and table names
+Set sysInfo = CreateObject("ADSystemInfo")
+strDomainName = sysInfo.DomainDNSName
 PSSchema = "hardwaremvp"
-PSTbl = "pdq"
-PSFN = "PDQ Inventory" 'Friendly Name for module
-PSRunInt = 1 'Module run interval (in days)
-PSML = 1 'Is this the master list?
-CSVPath = strCurDir & "\source\HardwareInventory.csv"
+PSTbl = "nexpose"
+PSFN = "Rapid7 Nexpose" 'Friendly Name for module
+PSRunInt = 7 'Module run interval (in days)
+PSML = 0 'Is this the master list?
+CSVPath = strCurDir & "\source\Nexpose.csv"
+
 
 'Gather variables from smapp.ini
 If filesys.FileExists(strCurDir & "\smapp.ini") then
@@ -51,7 +54,7 @@ If filesys.FileExists(CSVPath) then
 		"Database=" & PSSchema & "; User=" & DBUser & "; Password=" & DBPass & ";"
 
 	'Create the table for this module if it doesn't exist
-	str = "CREATE TABLE IF NOT EXISTS " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, IPAddress text, OS text, OSVersion text, OSSP text, Manufacturer text, ModelName text, SerialNumber text, Memory text, CPUName text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL);"
+	str = "CREATE TABLE IF NOT EXISTS " & PSSchema & "." & PSTbl & " (ID INT PRIMARY KEY AUTO_INCREMENT, Name text, IPAddress text, SiteName text, OS text, FirstDiscovered date DEFAULT NULL, LastDiscovered date DEFAULT NULL);"
 	adoconn.Execute(str)
 	
 	'Modify the module entry for this module
@@ -74,24 +77,24 @@ If filesys.FileExists(CSVPath) then
 		outputl = ""
 	end if
 	
-	filesys.DeleteFile CSVPath, force
+	'filesys.DeleteFile CSVPath, force
 end if
 
 
 
 Function IngestCSV()
-	Dim CurrPC, IPAddress, OS, OSVersion, OSSP, Manufacturer, ModelName, SerialNumber, Memory, CPUName
+	Dim CurrPC, IPAddress, SiteName, OS
 	
-	'Computer Name,Computer IP Address,Computer O/S,Computer O/S Version,Computer SP / Release,Computer Manufacturer,Computer Model,Computer Serial Number,Computer Memory,CPU Name,Computer Successful Scan Date
-	'ID, Name, IPAddress, OS, OSVersion, OSSP, Manufacturer, ModelName, SerialNumber, Memory, CPUName, FirstDiscovered, LastDiscovered
+	'Host Name,IP Address,site_name,Operating System
 
 	'PCs - Whats new/old/changed
-	AllHW = right(AllHW,len(AllHW)-206)
+	AllHW = right(AllHW,len(AllHW)-59)
 	do while len(AllHW) > 10
 		'Get PC name
 		CurrPC = mid(AllHW,1,instr(1,AllHW,",",1)-1)
 		AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
 		CurrPC = ucase(CurrPC) 'Make the device names all upper case for consistancy
+		CurrPC = replace(CurrPC,"." & ucase(strDomainName),"") 'Remove the domain from the device name
 		'msgbox CurrPC
 		'Get IP Address
 		if left(AllHW,1)="""" then
@@ -102,6 +105,15 @@ Function IngestCSV()
 			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
 		end if
 		'msgbox IPAddress
+		'Get Site Name
+		if left(AllHW,1)="""" then
+			SiteName = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
+			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
+		else
+			SiteName = mid(AllHW,1,instr(1,AllHW,",",1)-1)
+			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
+		end if
+		'msgbox SiteName
 		'Get OS
 		if left(AllHW,1)="""" then
 			OS = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
@@ -111,76 +123,6 @@ Function IngestCSV()
 			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
 		end if
 		'msgbox OS
-		'Get OSVersion
-		if left(AllHW,1)="""" then
-			OSVersion = mid(AllHW,2,instr(1,AllHW,",",1)-3)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		elseif instr(1,AllHW,",",1) - 1 =< 0 then
-			OSVersion = "0"
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-			'msgbox CurrApp & " No version!"
-		else
-			OSVersion = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox OSVersion
-		'Get OSSP
-		if left(AllHW,1)="""" then
-			OSSP = mid(AllHW,2,instr(1,AllHW,",",1)-3)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		elseif instr(1,AllHW,",",1) - 1 =< 0 then
-			OSSP = "0"
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-			'msgbox CurrApp & " No version!"
-		else
-			OSSP = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'Get Manufacturer
-		if left(AllHW,1)="""" then
-			Manufacturer = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		else
-			Manufacturer = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox Manufacturer
-		'Get ModelName
-		if left(AllHW,1)="""" then
-			ModelName = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		else
-			ModelName = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox ModelName
-		'Get SerialNumber
-		if left(AllHW,1)="""" then
-			SerialNumber = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		else
-			SerialNumber = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox SerialNumber
-		'Get Memory
-		if left(AllHW,1)="""" then
-			Memory = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		else
-			Memory = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox Memory
-		'Get CPUName
-		if left(AllHW,1)="""" then
-			CPUName = mid(AllHW,2,instr(1,AllHW,""",",1)-2)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,""",",1)-1)
-		else
-			CPUName = mid(AllHW,1,instr(1,AllHW,",",1)-1)
-			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,",",1))
-		end if
-		'msgbox CPUName
 		'Get LastScaned Date (not used)
 		if left(AllHW,1)="""" then
 			AllHW = right(AllHW,len(AllHW)-instr(1,AllHW,vbCrlf,1)-1)
@@ -189,109 +131,95 @@ Function IngestCSV()
 		end if
 		
 		
-		'msgbox CurrPC & vbCrlf & IPAddress & vbCrlf & OS & vbCrlf & OSVersion & vbCrlf & OSSP & vbCrlf & Manufacturer & vbCrlf & ModelName & vbCrlf & SerialNumber & vbCrlf & Memory & vbCrlf & CPUName
+		'msgbox CurrPC & vbCrlf & IPAddress & vbCrlf & SiteName & vbCrlf & OS
 		
-		str = "Select * from " & PSTbl & " where Name='" & CurrPC & "';"
-		rs.Open str, adoconn, 3, 3 'OpenType, LockType
-		if not rs.eof then
-			rs.MoveFirst
-			if len(rs("LastDiscovered") & "") = 0 then rs("LastDiscovered") = "2001-01-01" 'Fix DB issues
-			if len(rs("FirstDiscovered") & "") = 0 then rs("FirstDiscovered") = format(date()-1, "YYYY-MM-DD") 'Fix DB issues
-			if format(rs("LastDiscovered"), "YYYY-MM-DD") <> format(date(), "YYYY-MM-DD") then
-				rs("LastDiscovered") = format(date(), "YYYY-MM-DD")
-				'msgbox "date"
-			end if
-			
-			' if not rs("Version") = CurrVer then
-				' if instr(1,outputl,"<p><b>Software Added or Changed:</b></p>",1) = 0 then
-					' 'Header Info
-					' outputl = outputl & "<p><b>Software Added or Changed:</b></p>" & vbcrlf
-					' outputl = outputl & "<table>" & vbcrlf
+		if len(CurrPC) > 0 then
+			str = "Select * from " & PSTbl & " where Name='" & CurrPC & "';"
+			rs.Open str, adoconn, 3, 3 'OpenType, LockType
+			if not rs.eof then
+				rs.MoveFirst
+				if len(rs("LastDiscovered") & "") = 0 then rs("LastDiscovered") = "2001-01-01" 'Fix DB issues
+				if len(rs("FirstDiscovered") & "") = 0 then rs("FirstDiscovered") = format(date()-1, "YYYY-MM-DD") 'Fix DB issues
+				if format(rs("LastDiscovered"), "YYYY-MM-DD") <> format(date(), "YYYY-MM-DD") then
+					rs("LastDiscovered") = format(date(), "YYYY-MM-DD")
+					'msgbox "date"
+				end if
+				
+				' if not rs("Version") = CurrVer then
+					' if instr(1,outputl,"<p><b>Software Added or Changed:</b></p>",1) = 0 then
+						' 'Header Info
+						' outputl = outputl & "<p><b>Software Added or Changed:</b></p>" & vbcrlf
+						' outputl = outputl & "<table>" & vbcrlf
+						' outputl = outputl & "<tr>" & vbcrlf
+						' outputl = outputl & "  <th>Computer</th>" & vbcrlf
+						' outputl = outputl & "  <th>Application</th>" & vbcrlf
+						' outputl = outputl & "  <th>Publisher</th>" & vbcrlf
+						' outputl = outputl & "  <th>Previous Version</th>" & vbcrlf
+						' outputl = outputl & "  <th>New Version</th>" & vbcrlf
+						' outputl = outputl & "</tr>" & vbcrlf
+					' end if
+					
 					' outputl = outputl & "<tr>" & vbcrlf
-					' outputl = outputl & "  <th>Computer</th>" & vbcrlf
-					' outputl = outputl & "  <th>Application</th>" & vbcrlf
-					' outputl = outputl & "  <th>Publisher</th>" & vbcrlf
-					' outputl = outputl & "  <th>Previous Version</th>" & vbcrlf
-					' outputl = outputl & "  <th>New Version</th>" & vbcrlf
+					' outputl = outputl & "  <td>" & CurrPC & "</td>" & vbcrlf
+					' outputl = outputl & "  <td>" & CurrApp & "</td>" & vbcrlf
+					' outputl = outputl & "  <td>" & CurrPub & "</td>" & vbcrlf
+					' outputl = outputl & "  <td>" & rs("Version") & "</td>" & vbcrlf
+					' outputl = outputl & "  <td>" & CurrVer & "</td>" & vbcrlf
 					' outputl = outputl & "</tr>" & vbcrlf
+					
+					' 'msgbox CurrApp & ": Updated on " & CurrPC & " from " & rs("Version") & " to " & CurrVer
+					' rs("Version") = CurrVer
+					' rs("Publisher") = CurrPub
 				' end if
 				
-				' outputl = outputl & "<tr>" & vbcrlf
-				' outputl = outputl & "  <td>" & CurrPC & "</td>" & vbcrlf
-				' outputl = outputl & "  <td>" & CurrApp & "</td>" & vbcrlf
-				' outputl = outputl & "  <td>" & CurrPub & "</td>" & vbcrlf
-				' outputl = outputl & "  <td>" & rs("Version") & "</td>" & vbcrlf
-				' outputl = outputl & "  <td>" & CurrVer & "</td>" & vbcrlf
-				' outputl = outputl & "</tr>" & vbcrlf
+				'Update PC entry with the latest info
+				rs("IPAddress") = IPAddress 
+				rs("SiteName") = SiteName
+				rs("OS") = OS
 				
-				' 'msgbox CurrApp & ": Updated on " & CurrPC & " from " & rs("Version") & " to " & CurrVer
-				' rs("Version") = CurrVer
-				' rs("Publisher") = CurrPub
-			' end if
-			
-			'Update PC entry with the latest info
-			rs("IPAddress") = IPAddress 
-			rs("OS") = OS
-			rs("OSVersion") = OSVersion
-			rs("OSSP") = OSSP
-			rs("Manufacturer") = Manufacturer
-			rs("ModelName") = ModelName
-			rs("SerialNumber") = SerialNumber
-			rs("Memory") = Memory
-			rs("CPUName") = CPUName
-			
-			'msgbox CurrPC & " - " & IPAddress & ": finished updating"
-			
-			rs.update
-		else
-			if instr(1,outputl,"<p><b>Hardware Added:</b></p>",1) = 0 then
-				'Header Info
-				outputl = outputl & "<p><b>Hardware Added:</b></p>" & vbcrlf
-				outputl = outputl & "<table>" & vbcrlf
+				'msgbox CurrPC & " - " & IPAddress & ": finished updating"
+				
+				rs.update
+			else
+				if instr(1,outputl,"<p><b>Hardware Added:</b></p>",1) = 0 then
+					'Header Info
+					outputl = outputl & "<p><b>Hardware Added:</b></p>" & vbcrlf
+					outputl = outputl & "<table>" & vbcrlf
+					outputl = outputl & "<tr>" & vbcrlf
+					outputl = outputl & "  <th>Computer</th>" & vbcrlf
+					outputl = outputl & "  <th>IP Address</th>" & vbcrlf
+					outputl = outputl & "  <th>Site Name</th>" & vbcrlf
+					outputl = outputl & "  <th>Operating System</th>" & vbcrlf
+					if PSML = 0 then outputl = outputl & "  <th>On Master List</th>" & vbcrlf
+					outputl = outputl & "</tr>" & vbcrlf
+				end if
+				
+				'See if the device exists on the Master List
+				if PSML = 0 then
+					str = "select count(*) from " & PSSchema & "." & MasterListTableName & " where Name = '" & CurrPC & "';"
+					PConML = (adoconn.Execute(str))(0)
+					PConML = cint(PConML)
+				end if
+				
 				outputl = outputl & "<tr>" & vbcrlf
-				outputl = outputl & "  <th>Computer</th>" & vbcrlf
-				outputl = outputl & "  <th>IPAddress</th>" & vbcrlf
-				outputl = outputl & "  <th>OSVersion</th>" & vbcrlf
-				outputl = outputl & "  <th>OSSP</th>" & vbcrlf
-				outputl = outputl & "  <th>Manufacturer</th>" & vbcrlf
-				outputl = outputl & "  <th>ModelName</th>" & vbcrlf				
-				outputl = outputl & "  <th>SerialNumber</th>" & vbcrlf				
-				outputl = outputl & "  <th>Memory</th>" & vbcrlf				
-				outputl = outputl & "  <th>CPUName</th>" & vbcrlf
-				if PSML = 0 then outputl = outputl & "  <th>On Master List</th>" & vbcrlf
+				outputl = outputl & "  <td>" & CurrPC & "</td>" & vbcrlf
+				outputl = outputl & "  <td>" & IPAddress & "</td>" & vbcrlf
+				outputl = outputl & "  <td>" & SiteName & "</td>" & vbcrlf
+				outputl = outputl & "  <td>" & OS & "</td>" & vbcrlf
+				if PSML = 0 and PConML = 0 then
+					outputl = outputl & "  <td bgcolor=#FF0000>No</td>" & vbcrlf
+				elseif PSML = 0 and PConML > 0 then
+					outputl = outputl & "  <td>Yes</td>" & vbcrlf
+				end if
 				outputl = outputl & "</tr>" & vbcrlf
-			end if
-			
-			'See if the device exists on the Master List
-			if PSML = 0 then
-				str = "select count(*) from " & PSSchema & "." & MasterListTableName & " where Name = '" & CurrPC & "';"
-				PConML = (adoconn.Execute(str))(0)
-				PConML = cint(PConML)
-			end if
 				
-			outputl = outputl & "<tr>" & vbcrlf
-			outputl = outputl & "  <td>" & CurrPC & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & IPAddress & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & OSVersion & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & OSSP & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & Manufacturer & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & ModelName & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & SerialNumber & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & Memory & "</td>" & vbcrlf
-			outputl = outputl & "  <td>" & CPUName & "</td>" & vbcrlf
-			if PSML = 0 and PConML = 0 then
-				outputl = outputl & "  <td bgcolor=#FF0000>No</td>" & vbcrlf
-			elseif PSML = 0 and PConML > 0 then
-				outputl = outputl & "  <td>Yes</td>" & vbcrlf
+				str = "INSERT INTO "  & PSSchema & "." & PSTbl & "(Name, IPAddress, SiteName, OS, FirstDiscovered, LastDiscovered) values('" & CurrPC & "','" & IPAddress & "','" & SiteName & "','" & OS & "','" & format(date(), "YYYY-MM-DD")  & "','" & format(date(), "YYYY-MM-DD") & "');"
+				adoconn.Execute(str)
+				
+				'msgbox "Added: " & CurrPC & " - " & IPAddress
 			end if
-			outputl = outputl & "</tr>" & vbcrlf
-			
-			str = "INSERT INTO "  & PSSchema & "." & PSTbl & "(Name, IPAddress, OS, OSVersion, OSSP, Manufacturer, ModelName, SerialNumber, Memory, CPUName, FirstDiscovered, LastDiscovered) values('" & CurrPC & "','" & IPAddress & "','" & OS & "','" & OSVersion & "','" & OSSP & "','" & Manufacturer & "','" & ModelName & "','" & SerialNumber & "','" & Memory & "','" & CPUName & "','" & format(date(), "YYYY-MM-DD")  & "','" & format(date(), "YYYY-MM-DD") & "');"
-			adoconn.Execute(str)
-			
-			'msgbox "Added: " & CurrPC & " - " & IPAddress
+			rs.close
 		end if
-		rs.close
 		
 	loop
 
