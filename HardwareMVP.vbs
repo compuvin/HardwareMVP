@@ -260,7 +260,7 @@ Function ProcessMasterList()
 			loop
 			if NOTC > 0 then ModuleSQL = ", " & ModuleSQL
 			
-			str = "Select " & MLTableName & ".*" & ModuleSQL & " from " & MLTableName & " where LastDiscovered IS NOT NULL and not LastDiscovered = '" & format(date(), "YYYY-MM-DD") & "';"
+			str = "Select " & MLTableName & ".*" & ModuleSQL & " from " & MLTableName & " where LastDiscovered IS NOT NULL and not LastDiscovered = (select max(LastDiscovered) from " & MLTableName & ");"
 		else
 			str = ""
 		end if
