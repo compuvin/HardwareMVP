@@ -85,6 +85,13 @@ if outputl <> "" then
 end if
 
 ProcessModules 'Run scheduler
+ProcessMasterList
+
+if outputl <> "" then
+	outputl = "<html><head> <style>BODY{font-family: Arial; font-size: 10pt;}TABLE{border: 1px solid black; border-collapse: collapse;}TH{border: 1px solid black; background: #dddddd; padding: 5px; }TD{border: 1px solid black; padding: 5px; }</style> </head><body>" & vbcrlf & outputl
+	SendMail RptToEmail, "HardwareMVP: Devices Removed"
+	outputl = ""
+end if
 
 
 'Check to see if new modules exist
@@ -94,6 +101,7 @@ Function CheckForModules()
 	Set fld = fso.GetFolder(strCurDir & "\Modules")
 
 	mfound = ""
+	ModuleSQL = ""
 	For Each f In fld.Files
 		if right(lcase(f.name),4) = ".vbs" or right(lcase(f.name),4) = ".ps1" or right(lcase(f.name),4) = ".bat" then 'Supported module extentions: Visual Basic Script (vbs), PowerShell (ps1), Batch file (bat)
 			ModuleName = left(f.name,(len(f.name)-4))
@@ -107,10 +115,10 @@ Function CheckForModules()
 				
 				mfound = mfound & ModuleName & "|"
 			else
-				'if not rs("MasterList") = "1" and not rs("TableName") & "" = "" then
-				'	if not ModuleSQL = "" then ModuleSQL & ", "
-				'	ModuleSQL = ModuleSQL & "(select count(Name) from " & PSSchema & "." & rs("TableName") & " where " & rs("TableName") & ".Name = %MasterList%.Name) `" & rs("Name") &"`"
-				'end if
+				if not rs("MasterList") = "1" and not rs("TableName") & "" = "" then
+					if not ModuleSQL = "" then ModuleSQL = ModuleSQL & ", "
+					ModuleSQL = ModuleSQL & "(select count(Name) from " & PSSchema & "." & rs("TableName") & " where " & rs("TableName") & ".Name = %MasterList%.Name) `" & rs("Name") &"`"
+				end if
 				rs("LastDiscovered") = format(date(), "YYYY-MM-DD")
 				rs.update
 			end if
@@ -225,6 +233,87 @@ Function ProcessModules()
 	
 	rs.close
 End Function
+
+'Check for any removed devices that exist in other tables
+Function ProcessMasterList()
+	Dim MLTableName
+	Dim NOCML 'Number of columns on MasterList
+	Dim NOTC 'Number of total columns
+	Dim RemoveRS 'Should we remove the record
+	
+	NOTC = 0
+	
+	str = "Select * from modules where MasterList = '1';"
+	rs.Open str, adoconn, 2, 1 'OpenType, LockType
+	
+	if not rs.eof then
+		rs.movefirst
+		MLTableName = rs("TableName")
+		if cdate(rs("NextRunDate")) = cdate(format((date() + rs("RunInterval")), "YYYY-MM-DD")) then
+			str = "select count(*)  FROM information_schema.columns where table_schema = '" & PSSchema & "' and table_name = '" & MLTableName & "';"
+			NOCML = (adoconn.Execute(str))(0)
+			NOCML = cint(NOCML)
+			
+			do while not ModuleSQL = replace(ModuleSQL,"%MasterList%",MLTableName)
+				ModuleSQL = replace(ModuleSQL,"%MasterList%",MLTableName,1,1)
+				NOTC = NOTC + 1
+			loop
+			if NOTC > 0 then ModuleSQL = ", " & ModuleSQL
+			
+			str = "Select " & MLTableName & ".*" & ModuleSQL & " from " & MLTableName & " where LastDiscovered IS NOT NULL and not LastDiscovered = '" & format(date(), "YYYY-MM-DD") & "';"
+		else
+			str = ""
+		end if
+	end if
+	rs.close
+	
+	if not str = "" then
+		'response = inputbox("sql:", "Test", str)
+		rs.Open str, adoconn, 3, 3 'OpenType, LockType
+		
+		if not rs.eof then
+			rs.MoveFirst
+			
+			'Header Info
+			outputl = outputl & "<p><b>Devices removed from Master List:</b></p>" & vbcrlf
+			outputl = outputl & "<table>" & vbcrlf
+			outputl = outputl & "<tr>" & vbcrlf
+			
+			for i = 0 to (NOCML+NOTC-1)
+				if not rs.Fields.Item(i).Name = "ID" then outputl = outputl & "  <th>" & rs.Fields.Item(i).Name & "</th>" & vbcrlf
+			Next
+			
+			outputl = outputl & "</tr>" & vbcrlf
+		end if
+		
+		do while not rs.eof
+			RemoveRS = True
+			outputl = outputl & "<tr>" & vbcrlf
+			for i = 0 to (NOCML-1)
+				if not rs.Fields.Item(i).Name = "ID" then outputl = outputl & "  <td>" & rs(i) & "</td>" & vbcrlf
+			Next
+			for i = NOCML to (NOCML+NOTC-1)
+				if rs(i) = "0" then
+					outputl = outputl & "  <td>No</td>" & vbcrlf
+				else
+					outputl = outputl & "  <td bgcolor=#FF0000>Yes</td>" & vbcrlf
+					RemoveRS = False
+				end if
+			Next
+			outputl = outputl & "</tr>" & vbcrlf
+			
+			if RemoveRS = True then
+				str = "DELETE FROM `" & PSSchema & "`.`" & MLTableName & "` WHERE (`ID` = '" & rs("ID") & "');"
+				adoconn.Execute(str)
+			end if
+			
+			rs.movenext
+		loop
+		if rs.eof then outputl = outputl & "</table>" & vbcrlf
+		rs.close
+	end if
+End Function
+
 
 Function SendMail(TextRcv,TextSubject)
   Const cdoSendUsingPickup = 1 'Send message using the local SMTP service pickup directory. 
