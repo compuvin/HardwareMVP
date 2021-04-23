@@ -7,3 +7,5 @@ Script will prompt for server information and create the necessary tables.
 This is very very alpha. Some things haven't even been tested yet. Come back soon to see a working solution.
 
 I can use all the help I can get if anyone is interested!
+
+[![CodeFactor](https://www.codefactor.io/repository/github/compuvin/hardwaremvp/badge/main)](https://www.codefactor.io/repository/github/compuvin/hardwaremvp/overview/main)
