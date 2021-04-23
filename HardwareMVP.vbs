@@ -308,8 +308,8 @@ Function ProcessMasterList()
 			end if
 			
 			rs.movenext
+			if rs.eof then outputl = outputl & "</table>" & vbcrlf
 		loop
-		if rs.eof then outputl = outputl & "</table>" & vbcrlf
 		rs.close
 	end if
 End Function
