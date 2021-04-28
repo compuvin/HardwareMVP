@@ -42,7 +42,7 @@ $ModuleFolder = Split-Path -Parent -Path $MyInvocation.MyCommand.Source
 $IniContent = Get-IniContent ((Split-Path -Parent -Path $ModuleFolder) + "\smapp.ini")
 $NexposeData = New-Object System.Collections.ArrayList
 $UpdateDate = Get-Date -Format "yyyy-MM-dd"
-$DomainName = (Get-WmiObject Win32_ComputerSystem).Domain
+$DomainName = (Get-CimInstance Win32_ComputerSystem).Domain
 $outputl = ""
 
 
