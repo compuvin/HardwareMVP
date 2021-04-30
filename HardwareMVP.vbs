@@ -222,7 +222,7 @@ Function ProcessModules()
 		
 		'Run module script
 		objShell.Run MScript, 0, True ' The script will continue until it is closed.
-		'objShell.Run MScript, 1, True ' The script will continue until it is closed.
+		'objShell.Run MScript, 1, True ' Swap to this if you want the window to display on-screen
 		
 		'Update scheduler for the next run time
 		rs("NextRunDate") = format((date() + rs("RunInterval")), "YYYY-MM-DD")

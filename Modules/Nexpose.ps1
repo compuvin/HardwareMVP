@@ -40,7 +40,7 @@ function Get-IniContent ($filePath)
 
 $ModuleFolder = Split-Path -Parent -Path $MyInvocation.MyCommand.Source
 $IniContent = Get-IniContent ((Split-Path -Parent -Path $ModuleFolder) + "\smapp.ini")
-$NexposeData = New-Object System.Collections.ArrayList
+$ModuleData = New-Object System.Collections.ArrayList
 $UpdateDate = Get-Date -Format "yyyy-MM-dd"
 $DomainName = (Get-CimInstance Win32_ComputerSystem).Domain
 $outputl = ""
@@ -74,7 +74,7 @@ $header = @{ Authorization='Basic {0} ' -f $authInfo }
 
 $SearchFilter = '{"match": "all","filters": [{ "field": "operating-system", "operator": "contains", "value": "Microsoft" }]}'
 
-$NexposeData = (Invoke-RestMethod -Uri https://$($Server)/api/3/assets/search?size=10000 -Method Post -Headers $header -Body $SearchFilter -ContentType 'application/json') | select -ExpandProperty resources | select hostname, ip, os
+$ModuleData = (Invoke-RestMethod -Uri https://$($Server)/api/3/assets/search?size=10000 -Method Post -Headers $header -Body $SearchFilter -ContentType 'application/json') | select -ExpandProperty resources | select hostname, ip, os
 
 
 #Open MySQL Connection
@@ -91,37 +91,111 @@ $reader = $command.ExecuteNonQuery()
 $command.CommandText = "UPDATE " + $PSSchema + ".modules SET `Name` = '" + $PSFN + "', `TableName` = '" + $PSTbl + "', `RunInterval` = '" + $PSRunInt + "', `MasterList` = '" + $PSML + "' WHERE (`FileName` = '" + $MyInvocation.MyCommand.Name + "')";
 $reader = $command.ExecuteNonQuery()
 
-#Add/Update table entries
-foreach ($NexposeRow in $NexposeData)
+#Get the Master List table name
+if ($PSML -eq 0) #If this is not the master list
 {
-	if ($NexposeRow.hostname -ne "" -and $NexposeRow.hostname) #Ignore empty device names
+	$command.CommandText = "select TableName from " + $PSSchema + ".modules where MasterList = '1'";
+	$MasterListTableName = $command.ExecuteScalar()
+	#write-output $MasterListTableName
+}
+
+#Add/Update table entries
+foreach ($ModuleRow in $ModuleData)
+{
+	if ($ModuleRow.hostname -ne "" -and $ModuleRow.hostname) #Ignore empty device names
 	{
-		$command.CommandText = "INSERT INTO " + $PSSchema + "." + $PSTbl + "(Name, IPAddress, SiteName, OS, FirstDiscovered, LastDiscovered) values('" + $NexposeRow.hostname.replace(("." + $DomainName),"").ToUpper() + "','" + $NexposeRow.ip + "','','" + $NexposeRow.os + "','" + $UpdateDate + "','" + $UpdateDate + "') ON DUPLICATE KEY UPDATE IPAddress='" + $NexposeRow.ip + "', OS='" + $NexposeRow.os + "', LastDiscovered='" + $UpdateDate + "'";
+		$command.CommandText = "INSERT INTO " + $PSSchema + "." + $PSTbl + "(Name, IPAddress, SiteName, OS, FirstDiscovered, LastDiscovered) values('" + $ModuleRow.hostname.replace(("." + $DomainName),"").ToUpper() + "','" + $ModuleRow.ip + "','','" + $ModuleRow.os + "','" + $UpdateDate + "','" + $UpdateDate + "') ON DUPLICATE KEY UPDATE IPAddress='" + $ModuleRow.ip + "', OS='" + $ModuleRow.os + "', LastDiscovered='" + $UpdateDate + "'";
 		$reader = $command.ExecuteNonQuery()
 	}
 }
 
+#Report new devices
+$command.CommandText = "select " + $PSTbl + ".*, (select count(*) from " + $PSSchema + "." + $MasterListTableName + " where " + $PSTbl + ".name = " + $MasterListTableName + ".name) MasterList from " + $PSTbl + " where FirstDiscovered='" + $UpdateDate + "'";
+$reader = $command.ExecuteReader()
+
+while ($reader.Read()) {
+	if ($outputl.IndexOf('<p><b>Hardware Added:</b></p>') -eq -1) 
+	{
+		#Header Info
+		$outputl = $outputl + "<p><b>Hardware Added:</b></p>"
+		$outputl = $outputl + "<table>"
+		$outputl = $outputl + "<tr>"
+		$outputl = $outputl + "  <th>Computer</th>"
+		$outputl = $outputl + "  <th>IP Address</th>"
+		$outputl = $outputl + "  <th>Site Name</th>"
+		$outputl = $outputl + "  <th>Operating System</th>"
+		if ($PSML -eq 0) { $outputl = $outputl + "  <th>On Master List</th>" }
+		$outputl = $outputl + "</tr>"
+	}
+	$outputl = $outputl + "<tr>"
+	$outputl = $outputl + "  <td>" + $Reader["Name"].ToString() + "</td>"
+	$outputl = $outputl + "  <td>" + $Reader["IPAddress"].ToString() + "</td>"
+	$outputl = $outputl + "  <td>" + $Reader["SiteName"].ToString() + "</td>"
+	$outputl = $outputl + "  <td>" + $Reader["OS"].ToString() + "</td>"
+	if ($PSML -eq 0) {
+		if ($Reader["MasterList"].ToString() -eq 0)
+		{
+			$outputl = $outputl + "  <td bgcolor=#FF0000>No</td>"
+		} else {
+			$outputl = $outputl + "  <td>Yes</td>"
+		}
+	}
+	$outputl = $outputl + "</tr>"
+}
+$reader.close()
+if ($outputl.IndexOf('<p><b>Hardware Added:</b></p>') -ne -1) { $outputl = $outputl + "</table>" }
+
 #Remove old entries
-if ($NexposeData.length -gt 0)
+if ($ModuleData.length -gt 0)
 {
+	#Report removed devices
+	$command.CommandText = "select " + $PSTbl + ".*, (select count(*) from " + $PSSchema + "." + $MasterListTableName + " where " + $PSTbl + ".name = " + $MasterListTableName + ".name) MasterList from " + $PSTbl + " where not LastDiscovered='" + $UpdateDate + "'";
+	$reader = $command.ExecuteReader()
+	
+	while ($reader.Read()) {
+		if ($outputl.IndexOf('<p><b>Hardware Removed:</b></p>') -eq -1) 
+		{
+			#Header Info
+			$outputl = $outputl + "<p><b>Hardware Removed:</b></p>"
+			$outputl = $outputl + "<table>"
+			$outputl = $outputl + "<tr>"
+			$outputl = $outputl + "  <th>Computer</th>"
+			$outputl = $outputl + "  <th>IP Address</th>"
+			$outputl = $outputl + "  <th>Site Name</th>"
+			$outputl = $outputl + "  <th>Operating System</th>"
+			if ($PSML -eq 0) { $outputl = $outputl + "  <th>On Master List</th>" }
+			$outputl = $outputl + "</tr>"
+		}
+		$outputl = $outputl + "<tr>"
+		$outputl = $outputl + "  <td>" + $Reader["Name"].ToString() + "</td>"
+		$outputl = $outputl + "  <td>" + $Reader["IPAddress"].ToString() + "</td>"
+		$outputl = $outputl + "  <td>" + $Reader["SiteName"].ToString() + "</td>"
+		$outputl = $outputl + "  <td>" + $Reader["OS"].ToString() + "</td>"
+		if ($PSML -eq 0) {
+			if ($Reader["MasterList"].ToString() -eq 0)
+			{
+				$outputl = $outputl + "  <td>No</td>"
+			} else {
+				$outputl = $outputl + "  <td bgcolor=#FF0000>Yes</td>"
+			}
+		}
+		$outputl = $outputl + "</tr>"
+	}
+	$reader.close()
+	
+	#Perform Deletions
 	$command.CommandText = "DELETE FROM " + $PSSchema + "." + $PSTbl + " WHERE NOT (`LastDiscovered` = '" + $UpdateDate + "')";
 	$reader = $command.ExecuteNonQuery()
 }
 
-#$command.CommandText = "select * from " + $PSTbl;
-#$dataSet = New-Object System.Data.DataSet
-
-#$reader = $command.ExecuteReader()
-
-
-#while ($reader.Read()) {
-#  for ($i= 0; $i -lt $reader.FieldCount; $i++) {
-#    write-output $reader.GetValue($i).ToString()
-#  }
-#}
+if ($outputl.IndexOf('<p><b>Hardware Removed:</b></p>') -ne -1) { $outputl = $outputl + "</table>" }
 
 #Send email
-if ($outputl -ne "") { Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject "HardwareMVP: " + $PSFN + " Report" -Body $outputl -BodyAsHtml }
+if ($outputl -ne "")
+{
+	$outputl = "<html><head> <style>BODY{font-family: Arial; font-size: 10pt;}TABLE{border: 1px solid black; border-collapse: collapse;}TH{border: 1px solid black; background: #dddddd; padding: 5px; }TD{border: 1px solid black; padding: 5px; }</style> </head><body>" + $outputl
+	Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml
+}
 
 #Close MySQL Connection
 $myconnection.Close()

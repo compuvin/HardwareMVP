@@ -40,7 +40,7 @@ function Get-IniContent ($filePath)
 
 $ModuleFolder = Split-Path -Parent -Path $MyInvocation.MyCommand.Source
 $IniContent = Get-IniContent ((Split-Path -Parent -Path $ModuleFolder) + "\smapp.ini")
-$SEPData = New-Object System.Collections.ArrayList
+$ModuleData = New-Object System.Collections.ArrayList
 $UpdateDate = Get-Date -Format "yyyy-MM-dd"
 $outputl = ""
 
@@ -76,7 +76,7 @@ $authToken = (Invoke-RestMethod -Uri https://$($Server)/sepm/api/v1/identity/aut
 # format HTTP header
 $header = @{ Authorization='Bearer '+ $authToken.Token }
 
-$SEPData = (Invoke-RestMethod -Uri https://$($Server)/sepm/api/v1/computers -Headers $header -Body @{ pageSize='1000' }) | select -ExpandProperty content | select computerName, ipAddresses
+$ModuleData = (Invoke-RestMethod -Uri https://$($Server)/sepm/api/v1/computers -Headers $header -Body @{ pageSize='1000' }) | select -ExpandProperty content | select computerName, ipAddresses
 
 
 #Open MySQL Connection
@@ -94,14 +94,14 @@ $command.CommandText = "UPDATE " + $PSSchema + ".modules SET `Name` = '" + $PSFN
 $reader = $command.ExecuteNonQuery()
 
 #Add/Update table entries
-foreach ($SEPRow in $SEPData)
+foreach ($ModuleRow in $ModuleData)
 {
-	$command.CommandText = "INSERT INTO " + $PSSchema + "." + $PSTbl + "(Name, IPAddress, FirstDiscovered, LastDiscovered) values('" + $SEPRow.computerName.ToUpper() + "','" + $SEPRow.ipAddresses + "','" + $UpdateDate + "','" + $UpdateDate + "') ON DUPLICATE KEY UPDATE IPAddress='" + $SEPRow.ipAddresses + "', LastDiscovered='" + $UpdateDate + "'";
+	$command.CommandText = "INSERT INTO " + $PSSchema + "." + $PSTbl + "(Name, IPAddress, FirstDiscovered, LastDiscovered) values('" + $ModuleRow.computerName.ToUpper() + "','" + $ModuleRow.ipAddresses + "','" + $UpdateDate + "','" + $UpdateDate + "') ON DUPLICATE KEY UPDATE IPAddress='" + $ModuleRow.ipAddresses + "', LastDiscovered='" + $UpdateDate + "'";
 	$reader = $command.ExecuteNonQuery()
 }
 
 #Remove old entries
-if ($SEPData.length -gt 0)
+if ($ModuleData.length -gt 0)
 {
 	$command.CommandText = "DELETE FROM " + $PSSchema + "." + $PSTbl + " WHERE NOT (`LastDiscovered` = '" + $UpdateDate + "')";
 	$reader = $command.ExecuteNonQuery()
@@ -119,7 +119,7 @@ if ($SEPData.length -gt 0)
 #  }
 #}
 
-if ($outputl -ne "") { Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject "HardwareMVP: " + $PSFN + " Report" -Body $outputl -BodyAsHtml }
+if ($outputl -ne "") { Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml }
 
 #Close MySQL Connection
 $myconnection.Close()
