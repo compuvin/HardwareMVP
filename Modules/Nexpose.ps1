@@ -194,7 +194,7 @@ if ($outputl.IndexOf('<p><b>Hardware Removed:</b></p>') -ne -1) { $outputl = $ou
 if ($outputl -ne "")
 {
 	$outputl = "<html><head> <style>BODY{font-family: Arial; font-size: 10pt;}TABLE{border: 1px solid black; border-collapse: collapse;}TH{border: 1px solid black; background: #dddddd; padding: 5px; }TD{border: 1px solid black; padding: 5px; }</style> </head><body>" + $outputl
-	Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml
+	Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To ([string[]]($IniContent["Email"]["RptToEmail"]).Split(',')) -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml
 }
 
 #Close MySQL Connection

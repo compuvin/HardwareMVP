@@ -119,7 +119,7 @@ if ($ModuleData.length -gt 0)
 #  }
 #}
 
-if ($outputl -ne "") { Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To $IniContent["Email"]["RptToEmail"] -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml }
+if ($outputl -ne "") { Send-MailMessage -From $IniContent["Email"]["RptFromEmail"] -To ([string[]]($IniContent["Email"]["RptToEmail"]).Split(',')) -SmtpServer $IniContent["Email"]["EmailSvr"] -Subject ("HardwareMVP: " + $PSFN + " Report") -Body $outputl -BodyAsHtml }
 
 #Close MySQL Connection
 $myconnection.Close()
