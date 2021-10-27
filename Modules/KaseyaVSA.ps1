@@ -161,9 +161,9 @@ do  {
 		$response = Invoke-RestMethod @params
 	}
 	catch {
-		Write-Host $_.Exception.Message -f Red
-		if($_.ErrorDetail) {Write-Host $_.ErrorDetail.Message -f Red}
-		Write-Host $_.ScriptStackTrace -f Red
+		Write-Output $_.Exception.Message -f Red
+		if($_.ErrorDetail) {Write-Output $_.ErrorDetail.Message -f Red}
+		Write-Output $_.ScriptStackTrace -f Red
 		exit 1
 	}
     if($response) {$results += $response.result}
