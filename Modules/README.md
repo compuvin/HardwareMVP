@@ -10,6 +10,7 @@ Nexpose.ps1 - Inventories Windows devices that have been scanned by Rapid7's Nex
 NexposeCSV.vbs - Alternate to the Powershell script above. Only one needs to be used. More on this later<br>
 PDQ.vbs - More on this later<br>
 SymantecEndpointManager.ps1 - Inventories devices on Symantec Endpoint Manager. Uses Symantec's API to collect live data when it is run using the credentials supplied. *<br>
+TaegisXDR.ps1 - Inventories devices on Secureworks Taegis XDR. Uses Taegis's API to collect live data when it is run using the credentials supplied. *<br>
 
 <br><br>
 <i>* Credentials should be supplied to the smapp.ini using the following format (substituting ModuleName for the name of the module). If data is not entered or incorrect, an email is generated.<br>
